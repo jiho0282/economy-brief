@@ -55,14 +55,20 @@ def fetch_one(date_str: str):
         return None
 
     i_short, i_over = text.find("단기대출"), text.find("당좌대출")
-    m_short = re.search(r"\d+\.\d+", text[i_short:])
-    m_over = re.search(r"\d+\.\d+", text[i_over:])
+    # 단기대출: '7일이내' 바로 뒤 숫자
+    m_short = re.search(r"7일\s*이내\s*(\d{1,2}\.\d{1,3})", text[i_short:])
+    # 당좌대출: '당좌대출' 이후 '기준금리' 표 머리글 뒤에 나오는 첫 금리 숫자 (조회기준일 2026.10 같은 날짜는 제외)
+    over_part = text[i_over:]
+    j = over_part.find("기준금리")
+    m_over = re.search(r"(?<![\d.])(\d{1,2}\.\d{1,3})(?![\d.])", over_part[j:] if j >= 0 else over_part)
     if not m_short or not m_over:
         return None
+    m_date = re.search(r"조회기준일\s*:\s*(\d{4})\.(\d{2})\.(\d{2})", text)
     nums = re.findall(r"\d+\.\d+", text)
     return {
-        "shortLoanBaseRate": float(m_short.group()),
-        "overdraftBaseRate": float(m_over.group()),
+        "shortLoanBaseRate": float(m_short.group(1)),
+        "overdraftBaseRate": float(m_over.group(1)),
+        "bankBaseDate": "".join(m_date.groups()) if m_date else None,
         "legacyShortLoanBaseRate": float(nums[1]) if len(nums) > 1 else None,
         "legacyOverdraftBaseRate": float(nums[-1]) if nums else None,
         "snippetShort": text[i_short:i_short + 150],
