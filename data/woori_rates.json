@@ -1,0 +1,25 @@
+{
+  "byRequestedDate": {
+    "20260928": {
+      "shortLoanBaseRate": 2026.09,
+      "overdraftBaseRate": 2026.09,
+      "legacyShortLoanBaseRate": 3.0,
+      "legacyOverdraftBaseRate": 4.09,
+      "snippetShort": "단기대출 조회기준일 : 2026.09.28 (연이율, %) 단기대출 금리 정보 구분 기간 기준금리 비고 - 7일이내 3.00 15일이내 3.04 1개월미만 3.08 1개월이상 3.13 2개월이상 3.17 3개월이상 3.21 4개월이상 3.39 5개월이상 3.57 6개월",
+      "snippetOverdraft": "당좌대출 조회기준일 : 2026.09.28 (연이율, %) 당좌대출 금리 정보 구분 기간 기준금리 비고 - - 4.09 2011년 10월이후 신규",
+      "requestedDate": "20260928",
+      "date": "20260928"
+    },
+    "20261005": {
+      "shortLoanBaseRate": 2026.1,
+      "overdraftBaseRate": 2026.1,
+      "legacyShortLoanBaseRate": 3.0,
+      "legacyOverdraftBaseRate": 4.14,
+      "snippetShort": "단기대출 조회기준일 : 2026.10.02 (연이율, %) 단기대출 금리 정보 구분 기간 기준금리 비고 - 7일이내 3.00 15일이내 3.04 1개월미만 3.09 1개월이상 3.13 2개월이상 3.18 3개월이상 3.22 4개월이상 3.41 5개월이상 3.61 6개월",
+      "snippetOverdraft": "당좌대출 조회기준일 : 2026.10.02 (연이율, %) 당좌대출 금리 정보 구분 기간 기준금리 비고 - - 4.14 2011년 10월이후 신규",
+      "requestedDate": "20261005",
+      "date": "20261002"
+    }
+  },
+  "updatedAt": "2026-10-06T23:04:39+09:00"
+}
