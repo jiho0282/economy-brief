@@ -1,0 +1,34 @@
+name: 우리은행 대출기준금리 수집
+
+on:
+  schedule:
+    # 매주 화요일 07:20 KST (= 월요일 22:20 UTC)
+    - cron: "20 22 * * 1"
+  workflow_dispatch:
+    inputs:
+      dates:
+        description: "조회 날짜(공백 구분, 예: 20260928 20261005). 비우면 지난주/이번 주 월요일"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: 금리 조회
+        run: python scripts/woori_rates.py ${{ github.event.inputs.dates }}
+      - name: 결과 저장
+        run: |
+          git config user.name "rates-bot"
+          git config user.email "rates-bot@users.noreply.github.com"
+          git add data/woori_rates.json
+          git diff --cached --quiet || git commit -m "금리 업데이트 $(date -u +%F)"
+          git push
