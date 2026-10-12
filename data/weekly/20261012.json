@@ -2,9 +2,31 @@
   "weekMonday": "20261012",
   "previousMonday": "20261005",
   "title": "10월 2주차 경제 동향",
-  "collectedAt": "2026-10-12T15:46:05+09:00",
+  "collectedAt": "2026-10-12T16:01:13+09:00",
   "exchange": {
-    "error": "EXIM_AUTH_KEY 비밀값이 설정되지 않았습니다."
+    "previousDate": "20261002",
+    "currentDate": "20261012",
+    "dateRangeLabel": "10/2(금) → 10/12(월)",
+    "items": [
+      {
+        "currency": "USD",
+        "previous": 1359.6,
+        "current": 1338.0,
+        "diff": -21.6
+      },
+      {
+        "currency": "JPY(100)",
+        "previous": 860.32,
+        "current": 845.42,
+        "diff": -14.9
+      },
+      {
+        "currency": "EUR",
+        "previous": 1528.67,
+        "current": 1498.43,
+        "diff": -30.24
+      }
+    ]
   },
   "rates": {
     "previousDate": "20261002",
@@ -543,7 +565,5 @@
       }
     ]
   },
-  "errors": {
-    "exchange": "EXIM_AUTH_KEY 비밀값이 설정되지 않았습니다."
-  }
+  "errors": {}
 }
