@@ -1,41 +1,32 @@
 # 주간 경제동향 메일 작성 규칙
 
+> 데이터 수집은 GitHub Actions(`.github/workflows/weekly-collect.yml`)가 맡는다. 예약 작업은 수집된 JSON과 템플릿만 읽는다.
+
 매주 월요일 오후, 아래 규칙대로 메일을 만들어 보낸다. 디자인은 `templates/mail_example.html`과 **완전히 같게** 유지하고 값만 바꾼다.
 (배경색은 `bgcolor` 속성과 `background-color`를 같이 쓰고, 모든 글자 요소에 `font-family:'삼성금융체','Malgun Gothic',sans-serif;`를 직접 지정한다. 회사 메일 프로그램이 바깥쪽 스타일을 무시하기 때문.)
 
-## 0. 날짜 기준 (모두 한국시간)
-- 이번 주 기준일 = 이번 주 월요일(=발송일), 지난주 기준일 = 지난주 월요일.
-- 해당 날짜 데이터가 없으면(공휴일 등) 하루씩 거슬러 올라가 최대 10일 내 직전 영업일 값을 쓴다.
-- 메일 제목·헤더 제목: `{월}월 {주차}주차 경제 동향`, 주차 = ceil(월요일 날짜 ÷ 7).
-- 헤더 오른쪽: 발송일 `YYYY.MM.DD (요일)`.
-- 환율·금리 섹션 오른쪽 날짜: `M/D(요일) → M/D(요일)` (실제 적용한 두 날짜).
-- 금리 표 열 이름: 지난주/이번 주 기준일의 `{월}월 {ceil(일÷7)}주차`.
+## 0. 데이터 (GitHub Actions가 월요일 오전~오후에 미리 수집)
+- **모든 데이터는 `https://raw.githubusercontent.com/jiho0282/economy-brief/main/data/weekly/latest.json` 하나에 있다.** 다른 사이트(수출입은행·우리은행·한경)에는 직접 접속하지 않는다.
+- `weekMonday`가 이번 주 월요일(YYYYMMDD, 한국시간)과 같은지 확인한다. 다르면 아직 수집 전이므로 5분 간격으로 최대 4번 다시 확인한다(캐시 회피용으로 URL 끝에 `?t=현재시각`).
+- `errors`에 들어 있는 항목은 '확인 필요'로 처리하고, 헤더 위에 빨간 검토자용 안내 한 줄씩 넣는다.
+- 메일 제목·헤더 제목: `title` 값 그대로. 헤더 오른쪽: 발송일 `YYYY.MM.DD (요일)`.
 
-## 1. 환율 (한국수출입은행 현재환율 API)
-- `https://oapi.koreaexim.go.kr/site/program/financial/exchangeJSON?authkey={인증키}&searchdate=YYYYMMDD&data=AP01`
-- 응답이 빈 배열 `[]`이면 하루 전 날짜로 다시 조회.
-- `cur_unit`이 USD, JPY(100), EUR인 항목의 `deal_bas_r`(매매기준율)을 쓴다.
-- 카드: 이번 주 값, 변동(▲ 빨강 #d0342c / ▼ 파랑 #1f62c9, 변동 없으면 `-`), `전주 {지난주 값}`. 소수 둘째 자리, 천 단위 쉼표.
+## 1. 환율 (`exchange`)
+- 섹션 오른쪽 날짜: `exchange.dateRangeLabel`.
+- `exchange.items`의 USD, JPY(100), EUR 각각: 이번 주 `current`, 변동 `diff`(▲ 빨강 #d0342c / ▼ 파랑 #1f62c9, 0이면 `-`), `전주 {previous}`. 소수 둘째 자리, 천 단위 쉼표.
 
-## 2. 금리 (우리은행, GitHub Actions가 매주 월요일 14:20에 수집)
-- `https://raw.githubusercontent.com/jiho0282/economy-brief/main/data/woori_rates.json`
-- `byRequestedDate`에서 지난주 월요일, 이번 주 월요일(YYYYMMDD) 키를 찾는다.
-  - `shortLoanBaseRate` = 단기대출 기준금리, `overdraftBaseRate` = 당좌대출 기준금리.
-- 일반대출 = 단기대출 기준금리 + 1.50%p, 당좌대출 = 당좌대출 기준금리 + 1.10%p.
-- 변동은 bp(소수점 없이), 0이면 `-`, 상승 `▲ 5bp`(빨강) / 하락 `▼ 5bp`(파랑).
-- 표 아래: `※ 기준금리: 단기대출 3.00% → 3.00%, 당좌대출 4.09% → 4.14%` 형식.
-- 이번 주 키가 없거나 `error`가 있으면 해당 칸을 `확인 필요`로 두고, 메일 맨 위(헤더 위)에 빨간 글씨로 "금리 자동 조회 실패 – 우리은행 대출기준금리표 확인 필요" 한 줄을 넣는다(검토자용).
+## 2. 금리 (`rates`)
+- 섹션 오른쪽 날짜: `rates.dateRangeLabel`. 표 열 이름: `rates.previousLabel`, `rates.currentLabel`.
+- 일반대출 = `rates.generalLoan`, 당좌대출 = `rates.overdraftLoan` (previous/current는 % 소수 둘째 자리, `diffBp`가 0이면 `-`, 양수 `▲ 5bp` 빨강, 음수 `▼ 11bp` 파랑).
+- 산식 칸: `formula` 값 그대로.
+- 표 아래: `※ 기준금리: 단기대출 {base.shortLoan.previous}% → {current}%, 당좌대출 {base.overdraft.previous}% → {current}%` (소수 둘째 자리).
 
-## 3. 주요 경제뉴스 (한국경제 모닝루틴 Pick)
-- `https://www.hankyung.com/mr` 에서 최근 날짜 탭 5개(예: 10월 06일 …)를 확인한다.
-- 각 날짜의 Pick 목록: `https://www.hankyung.com/mr?date=YYYYMMDD` (탭 날짜). 위에서부터 순위 1, 2, 3 …
-- 선정(총 4개):
-  1. **환율 기사 1개(필수)**: 제목에 환율·원·달러·원달러·달러·원화·강달러·외환·엔화·유로 등이 들어간 기사 중 순위가 높고 최근인 것.
-  2. **금리 기사 1개(필수)**: 금리·국채금리·국고채·국채·채권·연준·FOMC·기준금리·10년물·30년물 등.
-  3. **관심 키워드 기사 2개**: 5일간 각 날짜 **상위 3개 기사** 중 원자재·금(금값/금 시세 등 gold 의미만, 금리·기금 제외)·유가·에너지·건축·건설·채권·삼성 관련 기사를 우선. 부족하면 상위 3개 중 중요도가 높은 기사로 채운다.
-  - 같은 기사 중복 금지. 본문을 읽을 수 없는 기사는 다음 후보로 교체.
-- 각 기사: 주제 태그(환율 #e6eefb/#1f62c9, 금리 #fde8e6/#c23a2f, 채권 #eaf5ee/#2b7a4b, 삼성 #efeafb/#5b3fb5 등 템플릿 색 재사용), 기사 날짜 `YYYY.MM.DD`, 제목(원문 그대로), **본문을 읽고 직접 쓴 1~2문장 요약**(수치 포함, 원문 문장 복사 금지), `기사 원문 →` 링크.
-- 섹션 오른쪽 날짜: 5개 탭 중 가장 이른 날 ~ 가장 늦은 날, `M/D(요일) ~ M/D(요일)`.
+## 3. 주요 경제뉴스 (`news`)
+- 섹션 오른쪽 날짜: `news.dateRangeLabel`.
+- `news.selected`의 4개 기사를 순서대로 쓴다(환율 1, 금리 1, 관심 키워드 2는 수집 단계에서 이미 골라 둠). 각 기사의 `body`를 읽고 **직접 쓴 1~2문장 요약**(수치 포함, 원문 문장 복사 금지).
+- `body`가 300자 미만이거나 기사 내용과 맞지 않으면 `news.spares`의 기사로 교체한다.
+- 태그: `tag` 값. 색은 환율 #e6eefb/#1f62c9, 금리 #fde8e6/#c23a2f, 채권 #eaf5ee/#2b7a4b, 삼성 #efeafb/#5b3fb5, 에너지 #fff4e0/#b26a00, 유가 #fdeee3/#b4501f, 건축 #e9f3f6/#1f6f86, 원자재·금 #f6f0dd/#8a6d1c, 주요 #eef1f5/#4a5462.
+- 기사 날짜 `pubDate`, 제목은 `title` 그대로, `기사 원문 →` 링크는 `url`.
 
 ## 4. 3분 경제 퀴즈
 - 이번 주 기사 내용으로 3문항(객관식). 정답이 기사에 명확히 나온 사실이어야 한다. 최소 1문항은 개념 이해형(왜 그런가).
@@ -48,4 +39,4 @@
 
 ## 6. 검증 후 발송
 - 보내기 전 숫자(환율 변동 계산, 금리 가산, bp)를 계산으로 다시 확인한다.
-- Gmail로 수신자에게 HTML 메일 발송. 제목은 `{월}월 {주차}주차 경제 동향`.
+- Gmail로 수신자에게 HTML 메일 발송. 제목은 `title` 값.
