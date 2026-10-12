@@ -9,6 +9,7 @@ Claude 예약 작업은 이 파일만 읽어서 요약·퀴즈·메일을 만든
   python scripts/collect_weekly.py 20261012   # 기준 월요일 지정
   python scripts/collect_weekly.py --if-missing  # 이번 주 데이터가 이미 있으면 건너뜀
 """
+import html as htmllib
 import json
 import os
 import re
@@ -136,8 +137,7 @@ def clean(s: str) -> str:
     s = re.sub(r"<script[\s\S]*?</script>|<style[\s\S]*?</style>", " ", s or "", flags=re.I)
     s = re.sub(r"<br\s*/?>", "\n", s, flags=re.I)
     s = re.sub(r"<[^>]+>", " ", s)
-    for a, b in (("&nbsp;", " "), ("&amp;", "&"), ("&quot;", '"'), ("&#39;", "'"), ("&lt;", "<"), ("&gt;", ">")):
-        s = s.replace(a, b)
+    s = htmllib.unescape(htmllib.unescape(s)).replace("\xa0", " ")
     return re.sub(r"[ \t\r\f\v]+", " ", s).strip()
 
 
@@ -176,19 +176,36 @@ def hk_tab_articles(tab_id: str):
     return out
 
 
-def article_body(url: str) -> str:
+def article_body(url: str, debug=None) -> str:
     try:
         html = requests.get(url, headers=UA, timeout=30).text
     except Exception as e:  # noqa: BLE001
         return f"[본문 조회 실패: {e}]"
-    m = re.search(r'<div[^>]+id=["\']articletxt["\'][^>]*>([\s\S]*?)</div>\s*(?:<!--|<div[^>]+class=["\'][^"\']*(?:article-ad|ad-|byline|copyright))', html)
-    if not m:
-        m = re.search(r'<div[^>]+id=["\']articletxt["\'][^>]*>([\s\S]{0,20000})', html)
-    text = clean(m.group(1)) if m else ""
-    if len(text) < 200:
-        d = re.search(r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\']([^"\']*)', html)
-        text = (text + " " + (clean(d.group(1)) if d else "")).strip()
-    return re.sub(r"\n\s*\n+", "\n", text)[:3500]
+    cands = []
+    # 1) JSON-LD articleBody
+    for m in re.finditer(r'"articleBody"\s*:\s*"((?:[^"\\]|\\.)*)"', html):
+        try:
+            cands.append(json.loads('"' + m.group(1) + '"'))
+        except Exception:  # noqa: BLE001
+            pass
+    # 2) 본문 컨테이너
+    for pat in (r'id=["\']articletxt["\']', r'class=["\'][^"\']*article-body[^"\']*["\']',
+                r'itemprop=["\']articleBody["\']', r'class=["\'][^"\']*article-contents?[^"\']*["\']'):
+        m = re.search(pat, html)
+        if m:
+            chunk = html[m.end():m.end() + 40000]
+            chunk = re.split(r'<div[^>]+class=["\'][^"\']*(?:article-copyright|byline|article-ad|related|reporter|tag-list)', chunk)[0]
+            cands.append(clean(chunk.split(">", 1)[-1]))
+    # 3) 메타 설명
+    for pat in (r'property=["\']og:description["\'][^>]+content=["\']([^"\']*)', r'name=["\']description["\'][^>]+content=["\']([^"\']*)'):
+        d = re.search(pat, html)
+        if d:
+            cands.append(clean(d.group(1)))
+    text = max(cands, key=len) if cands else ""
+    if debug is not None and len(text) < 300:
+        debug.append({"url": url, "htmlLen": len(html),
+                      "markers": {k: html.find(k) for k in ("articletxt", "article-body", "articleBody", "og:description", "premium", "로그인", "구독")}})
+    return re.sub(r"\n\s*\n+", "\n", text).strip()[:3500]
 
 
 def kw_score(title, kws):
@@ -272,12 +289,13 @@ def collect_news():
             selected.append({**a, "tag": "주요", "role": "보충"})
 
     # 본문 + 예비 후보(본문이 비면 교체용)
+    dbg = []
     for s in selected:
-        s["body"] = article_body(s["url"])
+        s["body"] = article_body(s["url"], dbg)
     spares = []
     for a in sorted(top3, key=lambda x: (x["rank"], x["dateIndex"])):
         if a["url"] not in used and len(spares) < 3:
-            spares.append({**a, "tag": focus_tag(a["title"]) or "주요", "body": article_body(a["url"])})
+            spares.append({**a, "tag": focus_tag(a["title"]) or "주요", "body": article_body(a["url"], dbg)})
 
     labels = [b["label"] for b in blocks]
     def to_ds(lbl, ref_year):
@@ -286,7 +304,7 @@ def collect_news():
     year = datetime.now(KST).year
     ds_list = sorted(to_ds(l, year) for l in labels)
     rng = f"{fmt_md(ds_list[0].strftime('%Y%m%d'))} ~ {fmt_md(ds_list[-1].strftime('%Y%m%d'))}" if ds_list else ""
-    return {"tabs": labels, "dateRangeLabel": rng, "selected": selected, "spares": spares,
+    return {"tabs": labels, "dateRangeLabel": rng, "selected": selected, "spares": spares, "bodyDebug": dbg,
             "allArticles": [{k: a[k] for k in ("title", "url", "pubDate", "rank", "tabLabel")} for a in pool]}
 
 
