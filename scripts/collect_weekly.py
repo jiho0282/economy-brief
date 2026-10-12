@@ -120,7 +120,9 @@ def collect_rates(prev: str, cur: str):
 EXCHANGE_KW = [("환율", 80), ("원·달러", 70), ("원달러", 70), ("원/달러", 70), ("달러", 45),
                ("원화", 45), ("강달러", 45), ("외환", 40), ("엔화", 30), ("유로", 30)]
 INTEREST_KW = [("금리", 80), ("국채금리", 75), ("국채 금리", 75), ("국고채", 60), ("국채", 45),
-               ("채권", 45), ("연준", 40), ("FOMC", 40), ("기준금리", 60), ("10년물", 30), ("30년물", 30)]
+               ("채권", 45), ("연준", 40), ("FOMC", 40), ("기준금리", 60), ("10년물", 30), ("30년물", 30),
+               ("금통위", 60), ("한국은행", 50), ("한은", 50), ("통화정책", 50), ("긴축", 50), ("완화", 20),
+               ("회사채", 45), ("신종자본증권", 40), ("대출", 35), ("예금", 35), ("이자", 35), ("인상", 15), ("인하", 15)]
 # 관심 키워드 (태그명, 정규식)
 FOCUS_KW = [
     ("원자재", r"원자재|구리|니켈|리튬|철광석|광물"),
@@ -179,13 +181,18 @@ def hk_tab_articles(tab_id: str):
     return out
 
 
-def is_premium(url: str, html: str) -> bool:
-    """한경 프리미엄9(유료) 기사 여부: 기사번호가 영문으로 끝나거나 유료 안내 문구가 있으면 유료로 본다."""
+def premium_reason(url: str, html: str):
+    """한경 프리미엄9(유료) 기사면 그 근거를, 아니면 None을 돌려준다."""
     if re.search(r"/article/\d+[a-zA-Z]+$", url.split("?")[0]):
-        return True
-    if re.search(r"hk_premium_code=\d", html):
-        return True
-    return any(m in html for m in PREMIUM_MARKERS)
+        return "기사번호가 유료(영문 접미사)"
+    for m in PREMIUM_MARKERS:
+        if m in html:
+            return f"유료 안내 문구: {m}"
+    return None
+
+
+def is_premium(url: str, html: str) -> bool:
+    return premium_reason(url, html) is not None
 
 
 def article_body(url: str, debug=None, info=None) -> str:
@@ -194,7 +201,7 @@ def article_body(url: str, debug=None, info=None) -> str:
     except Exception as e:  # noqa: BLE001
         return f"[본문 조회 실패: {e}]"
     if info is not None:
-        info["premium"] = is_premium(url, html)
+        info["premium"] = premium_reason(url, html)
     cands = []
     # 1) JSON-LD articleBody
     for m in re.finditer(r'"articleBody"\s*:\s*"((?:[^"\\]|\\.)*)"', html):
@@ -286,10 +293,10 @@ def collect_news():
         if a["url"] not in cache:
             info = {}
             body = article_body(a["url"], dbg, info)
-            cache[a["url"]] = (body, info.get("premium", False))
+            cache[a["url"]] = (body, info.get("premium"))
         body, prem = cache[a["url"]]
         if prem or len(body) < 300:
-            skipped.append({"title": a["title"], "url": a["url"], "reason": "유료기사" if prem else "본문 부족"})
+            skipped.append({"title": a["title"], "url": a["url"], "reason": f"유료기사({prem})" if prem else "본문 부족"})
             used.add(a["url"])
             return False
         return True
@@ -321,11 +328,15 @@ def collect_news():
                 tags_used.add(t)
                 add(a, t, "관심")
     # 부족하면 날짜별 1위 → 2위 → 3위 기사 순으로 채움
-    for a in sorted(top3(), key=lambda x: (x["rank"], x["dateIndex"])):
-        if len(selected) >= 4:
-            break
-        if a["url"] not in used and ok(a):
-            add(a, display_tag(a["title"]), "보충")
+    for distinct in (True, False):
+        for a in sorted(top3(), key=lambda x: (x["rank"], x["dateIndex"])):
+            if len(selected) >= 4:
+                break
+            t = display_tag(a["title"])
+            if distinct and t != "주요" and t in {x["tag"] for x in selected}:
+                continue
+            if a["url"] not in used and ok(a):
+                add(a, t, "보충")
 
     # 예비 후보(요약이 어려울 때 교체용)
     spares = []
