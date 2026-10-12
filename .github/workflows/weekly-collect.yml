@@ -1,0 +1,51 @@
+name: 주간 경제동향 데이터 수집
+
+on:
+  schedule:
+    # 월요일 KST 10:07 / 12:07 / 13:37 / 14:07 (GitHub 예약이 가끔 건너뛰어 여러 번 시도, 이미 수집됐으면 건너뜀)
+    - cron: "7 1 * * 1"
+    - cron: "7 3 * * 1"
+    - cron: "37 4 * * 1"
+    - cron: "7 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      monday:
+        description: "기준 월요일(YYYYMMDD). 비우면 이번 주 월요일"
+        required: false
+        default: ""
+      force:
+        description: "이미 수집돼 있어도 다시 수집 (true/false)"
+        required: false
+        default: "true"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: weekly-collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: 수집
+        env:
+          EXIM_AUTH_KEY: ${{ secrets.EXIM_AUTH_KEY }}
+        run: |
+          FLAG="--if-missing"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.force }}" = "true" ]; then FLAG=""; fi
+          python scripts/collect_weekly.py ${{ github.event.inputs.monday }} $FLAG
+      - name: 결과 저장
+        run: |
+          git config user.name "rates-bot"
+          git config user.email "rates-bot@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet && exit 0
+          git commit -m "주간 데이터 수집 $(TZ=Asia/Seoul date +%F_%H%M)"
+          for i in 1 2 3; do git pull --rebase -q && git push && break; sleep 5; done
