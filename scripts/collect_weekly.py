@@ -129,8 +129,11 @@ FOCUS_KW = [
     ("에너지", r"에너지|LNG|가스|전력|발전|원전|태양광"),
     ("건축", r"건축|건설|시공|재건축|분양|부동산|아파트|주택|집값"),
     ("채권", r"채권|국채|국고채|회사채"),
-    ("삼성", r"삼성|삼전"),
 ]
+# 관심 키워드가 아닌 기사의 태그 표시용 (선정 우선순위에는 영향 없음)
+TAG_ONLY_KW = [("삼성", r"삼성|삼전"), ("반도체", r"반도체|HBM|메모리"), ("증시", r"코스피|코스닥|증시|주가"),
+               ("부동산", r"부동산|아파트|집값")]
+PREMIUM_MARKERS = ("한경 프리미엄9의 모든 콘텐츠", "무료 열람 혜택", "5회 무료 열람", "한경 프리미엄9을 구독하고")
 
 
 def clean(s: str) -> str:
@@ -176,11 +179,22 @@ def hk_tab_articles(tab_id: str):
     return out
 
 
-def article_body(url: str, debug=None) -> str:
+def is_premium(url: str, html: str) -> bool:
+    """한경 프리미엄9(유료) 기사 여부: 기사번호가 영문으로 끝나거나 유료 안내 문구가 있으면 유료로 본다."""
+    if re.search(r"/article/\d+[a-zA-Z]+$", url.split("?")[0]):
+        return True
+    if re.search(r"hk_premium_code=\d", html):
+        return True
+    return any(m in html for m in PREMIUM_MARKERS)
+
+
+def article_body(url: str, debug=None, info=None) -> str:
     try:
         html = requests.get(url, headers=UA, timeout=30).text
     except Exception as e:  # noqa: BLE001
         return f"[본문 조회 실패: {e}]"
+    if info is not None:
+        info["premium"] = is_premium(url, html)
     cands = []
     # 1) JSON-LD articleBody
     for m in re.finditer(r'"articleBody"\s*:\s*"((?:[^"\\]|\\.)*)"', html):
@@ -219,6 +233,16 @@ def focus_tag(title):
     return None
 
 
+def display_tag(title):
+    t = focus_tag(title)
+    if t:
+        return t
+    for tag, pat in TAG_ONLY_KW:
+        if re.search(pat, title):
+            return tag
+    return "주요"
+
+
 def collect_news():
     tabs = hk_date_tabs()[:5]
     blocks = []
@@ -255,47 +279,62 @@ def collect_news():
         cands.sort(key=lambda x: -x[0])
         return [a for _, a in cands]
 
+    dbg, skipped, cache = [], [], {}
+
+    def ok(a):
+        """본문을 받아 보고 무료·본문 충분하면 True."""
+        if a["url"] not in cache:
+            info = {}
+            body = article_body(a["url"], dbg, info)
+            cache[a["url"]] = (body, info.get("premium", False))
+        body, prem = cache[a["url"]]
+        if prem or len(body) < 300:
+            skipped.append({"title": a["title"], "url": a["url"], "reason": "유료기사" if prem else "본문 부족"})
+            used.add(a["url"])
+            return False
+        return True
+
+    def add(a, tag, role):
+        used.add(a["url"])
+        selected.append({**a, "tag": tag, "role": role, "body": cache[a["url"]][0]})
+
     selected = []
+    # 필수: 환율 1, 금리 1
     for tag, kws in (("환율", EXCHANGE_KW), ("금리", INTEREST_KW)):
         for a in best(kws):
-            used.add(a["url"])
-            selected.append({**a, "tag": tag, "role": "필수"})
-            break
+            if a["url"] not in used and ok(a):
+                add(a, tag, "필수")
+                break
 
-    # 관심 키워드: 날짜별 상위 3개 중에서 우선
-    top3 = [a for a in pool if a["rank"] <= 3 and a["url"] not in used]
-    focus = [(a, focus_tag(a["title"])) for a in top3]
-    focus = [(a, t) for a, t in focus if t]
-    focus.sort(key=lambda x: (x[0]["dateIndex"], x[0]["rank"]))
+    # 관심 키워드: 날짜별 상위 3개 중에서 (원자재·금·유가·에너지·건축·채권), 서로 다른 주제 우선
+    def top3():
+        return sorted([a for a in pool if a["rank"] <= 3 and a["url"] not in used],
+                      key=lambda x: (x["dateIndex"], x["rank"]))
+    n_focus = lambda: len([x for x in selected if x["role"] == "관심"])
     tags_used = set()
-    for a, t in focus:  # 서로 다른 주제 우선
-        if len([s for s in selected if s["role"] == "관심"]) >= 2:
-            break
-        if t in tags_used:
-            continue
-        used.add(a["url"]); tags_used.add(t)
-        selected.append({**a, "tag": t, "role": "관심"})
-    for a, t in focus:
-        if len([s for s in selected if s["role"] == "관심"]) >= 2:
-            break
-        if a["url"] not in used:
-            used.add(a["url"])
-            selected.append({**a, "tag": t, "role": "관심"})
-    for a in sorted(top3, key=lambda x: (x["rank"], x["dateIndex"])):  # 부족하면 상위 기사로
+    for distinct in (True, False):
+        for a in top3():
+            t = focus_tag(a["title"])
+            if n_focus() >= 2 or not t or (distinct and t in tags_used):
+                continue
+            if ok(a):
+                tags_used.add(t)
+                add(a, t, "관심")
+    # 부족하면 날짜별 1위 → 2위 → 3위 기사 순으로 채움
+    for a in sorted(top3(), key=lambda x: (x["rank"], x["dateIndex"])):
         if len(selected) >= 4:
             break
-        if a["url"] not in used:
-            used.add(a["url"])
-            selected.append({**a, "tag": "주요", "role": "보충"})
+        if a["url"] not in used and ok(a):
+            add(a, display_tag(a["title"]), "보충")
 
-    # 본문 + 예비 후보(본문이 비면 교체용)
-    dbg = []
-    for s in selected:
-        s["body"] = article_body(s["url"], dbg)
+    # 예비 후보(요약이 어려울 때 교체용)
     spares = []
-    for a in sorted(top3, key=lambda x: (x["rank"], x["dateIndex"])):
-        if a["url"] not in used and len(spares) < 3:
-            spares.append({**a, "tag": focus_tag(a["title"]) or "주요", "body": article_body(a["url"], dbg)})
+    for a in sorted(top3(), key=lambda x: (x["rank"], x["dateIndex"])):
+        if len(spares) >= 3:
+            break
+        if a["url"] not in used and ok(a):
+            used.add(a["url"])
+            spares.append({**a, "tag": display_tag(a["title"]), "body": cache[a["url"]][0]})
 
     labels = [b["label"] for b in blocks]
     def to_ds(lbl, ref_year):
@@ -304,7 +343,7 @@ def collect_news():
     year = datetime.now(KST).year
     ds_list = sorted(to_ds(l, year) for l in labels)
     rng = f"{fmt_md(ds_list[0].strftime('%Y%m%d'))} ~ {fmt_md(ds_list[-1].strftime('%Y%m%d'))}" if ds_list else ""
-    return {"tabs": labels, "dateRangeLabel": rng, "selected": selected, "spares": spares, "bodyDebug": dbg,
+    return {"tabs": labels, "dateRangeLabel": rng, "selected": selected, "spares": spares, "skipped": skipped, "bodyDebug": dbg,
             "allArticles": [{k: a[k] for k in ("title", "url", "pubDate", "rank", "tabLabel")} for a in pool]}
 
 
