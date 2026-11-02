@@ -1,0 +1,50 @@
+{
+  "weekMonday": "20261102",
+  "previousMonday": "20261026",
+  "title": "11월 1주차 경제 동향",
+  "collectedAt": "2026-11-02T16:37:14+09:00",
+  "exchange": {
+    "previousDate": "20261026",
+    "currentDate": "20261102",
+    "dateRangeLabel": "10/26(월) → 11/2(월)",
+    "items": [
+      {
+        "currency": "USD",
+        "previous": 1324.3,
+        "current": 1337.2,
+        "diff": 12.9
+      },
+      {
+        "currency": "JPY(100)",
+        "previous": 843.83,
+        "current": 848.21,
+        "diff": 4.38
+      },
+      {
+        "currency": "EUR",
+        "previous": 1483.81,
+        "current": 1492.72,
+        "diff": 8.91
+      }
+    ]
+  },
+  "rates": {
+    "error": "최근 10일 내 금리 데이터를 찾지 못했습니다.",
+    "previous": {
+      "requestedDate": "20261026",
+      "error": "최근 10일 내 금리 데이터를 찾지 못했습니다."
+    },
+    "current": {
+      "requestedDate": "20261102",
+      "error": "최근 10일 내 금리 데이터를 찾지 못했습니다."
+    }
+  },
+  "news": {
+    "error": "한국경제 모닝루틴 기사 목록을 가져오지 못했습니다.",
+    "tabs": []
+  },
+  "errors": {
+    "rates": "최근 10일 내 금리 데이터를 찾지 못했습니다.",
+    "news": "한국경제 모닝루틴 기사 목록을 가져오지 못했습니다."
+  }
+}
